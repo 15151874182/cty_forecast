@@ -41,4 +41,35 @@ class Dataset():
         self.freq=1440/int(pd.infer_freq(self.data['date'].head(5))[:-1])
         self.days=len(self.data)/self.freq
         return self
-    
+
+    def load_system2(self,mode='normal',y_shift=96):
+        self.data=pd.read_csv('./data/system/system2.csv')
+        if mode=='normal': ##普通模式，用协变量tmp预测load，load就是target
+            self.data.columns=['date', 'tmp', 'target']
+            self.feas=self.data[['date','tmp']] 
+            self.target=self.data['target']
+        elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
+            self.data['target']=self.data['load'].shift(y_shift)
+            self.data=self.data.iloc[y_shift:,:]
+            self.data=self.data.reset_index(drop=True)
+            self.feas=self.data[['date','tmp','load']] 
+            self.target=self.data['target']   
+        self.freq=1440/int(pd.infer_freq(self.data['date'].head(5))[:-1])
+        self.days=len(self.data)/self.freq
+        return self
+
+    def load_system_tang(self,mode='normal',y_shift=96):
+        self.data=pd.read_csv('../data/system/system_tang.csv')
+        if mode=='normal': ##普通模式，用协变量tmp预测load，load就是target
+            self.data.columns=['target','date']
+            self.feas=self.data['date'] 
+            self.target=self.data['target']
+        elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
+            self.data['target']=self.data['load'].shift(y_shift)
+            self.data=self.data.iloc[y_shift:,:]
+            self.data=self.data.reset_index(drop=True)
+            self.feas=self.data[['date','load']] 
+            self.target=self.data['target']   
+        self.freq=1440/int(pd.infer_freq(self.data['date'].head(5))[:-1])
+        self.days=len(self.data)/self.freq
+        return self
