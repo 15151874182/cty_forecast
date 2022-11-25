@@ -16,18 +16,23 @@ def divide_by_n(df,n):
     return df_n_list
 
 ####将数据集按比例划分为train,val,test
-def dataset_split(df,n,ratio=[0.7,0.2,0.1]):
+def dataset_split(df,n,ratio=[0.7,0.2,0.1],mode=1):
     '''
-
+    支持时序数据的按组打乱，保持组内数据的时序性
     Parameters
     ----------
     df : dataframe
         源数据集.
-    n : 每天包含几个样本
+    n : 每组包含几个样本(一个bin里面有几个样本),支持n=1,和普通数据划分一致
+        n可以不被len(df)整除，但会丢失一些数据
         DESCRIPTION.
-    ratio : list, optional
+    ratio : list
         train,val,test划分比例. The default is [0.7,0.2,0.1].
-
+    mode : int   1.test抽取最后部分不打乱，train,val等间隔采样，train保持一定组外时序性
+                 2.test抽取最后部分不打乱，train,val 打乱组外时序性
+                 划分原则：test方便画图看图，不需要打乱；也不需要一定保持和train同分布
+                         train和val必须同分布，这样val的中间结果才有泛化性，能辅助模型调整
+        数据划分方式.
     Returns
     -------
     trainset : dataframe
@@ -38,18 +43,25 @@ def dataset_split(df,n,ratio=[0.7,0.2,0.1]):
         DESCRIPTION.
 
     '''
-    ##划分逻辑：先按天划分，计算出train，val，test分别占哪几天
+    ##划分逻辑：先按组划分，计算出train，val，test分别占哪几组
     ##然后根据天数计算出每段id在df种的具体ids，并提取对应数据
-    blocks=int(len(df)/n) ##按天分成几块
-    train_len=int(blocks*ratio[0]) ##train占几个块
-    val_len=int(blocks*ratio[1])
+    bins=int(len(df)/n) ##先按组划分
+    train_len=int(bins*ratio[0]) ##train占几组
+    val_len=int(bins*ratio[1])   ##val占几组
+    test_len=bins-train_len-val_len
     
-    index=[i for i in range(blocks)]
-    train_id=random.sample(index,train_len)  
-    index=list(set(index)-set(train_id))
-    val_id=random.sample(index,val_len)
-    test_id=list(set(index)-set(val_id))
+    index=[i for i in range(bins)]
+    test_id=index[-test_len:] ##test先抽最后面
+    index=index[:-test_len]   ##index去掉test
+    gap=len(index)//val_len   ##根据抽样数，计算间隔gap
+    val_id=[gap//2+gap*i for i in range(val_len)] ##等间隔抽样
+    train_id=list(set(index)-set(val_id))##index从中拿掉等间隔的val，生成train
+    
+    if mode==2: ##上面结果已经是mode=1了，mode=2打乱即可
+        random.shuffle(train_id)
+        random.shuffle(val_id)
 
+    
     train_ids=[]
     val_ids=[]
     test_ids=[]

@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import joblib
-from sklearn.preprocessing import MinMaxScaler
 
+from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 import torch
 import torch.autograd as autograd
@@ -56,7 +56,7 @@ class LSTM():
     def build_model(self,x_train):
         self.model=LstmPyorch(fea_size=x_train.shape[1],
                          seq_len=96,
-                         hidden_size=3,
+                         hidden_size=6,
                          num_layers=1,
                          output_size=1, 
                          batch_size=6).to(device)
@@ -68,23 +68,25 @@ class LSTM():
         # 先转换成torch能识别的dataset
         import torch.utils.data as data
         
-        self.scaler_x = MinMaxScaler(feature_range=(0.1, 1))
-        self.scaler_y = MinMaxScaler(feature_range=(0.1, 1))
+        self.scaler_x = MinMaxScaler(feature_range=(0, 1))
+        self.scaler_y = MinMaxScaler(feature_range=(0, 1))
         x_train = self.scaler_x.fit_transform(x_train)
         y_train = self.scaler_y.fit_transform(y_train[:,None])
-        x_val = self.scaler_x.fit_transform(x_val)
-        y_val = self.scaler_y.fit_transform(y_val[:,None])
-        # result_ = scaler.fit_transform(x_val)
-        # result_ = scaler.fit_transform(y_val)
-        
-        trainset = data.TensorDataset(torch.Tensor(x_train.reshape(-1,self.model.seq_len,x_train.shape[1])), torch.Tensor(y_train.reshape(-1,self.model.seq_len,x_train.shape[1])))
+        x_val = self.scaler_x.transform(x_val)
+        y_val = self.scaler_y.transform(y_val[:,None])
+
+        x=torch.Tensor(x_train.reshape(-1,self.model.seq_len,x_train.shape[1]))
+        y=torch.Tensor(y_train.reshape(-1,self.model.seq_len,1))
+        trainset = data.TensorDataset(x, y)
         train_loader = data.DataLoader(dataset=trainset,
                                        batch_size=self.model.batch_size,
                                        shuffle=False, ##x_train已经打乱过了
                                        num_workers=1,
                                        drop_last=True)
-
-        valset = data.TensorDataset(torch.Tensor(x_val.reshape(-1,self.model.seq_len,x_train.shape[1])), torch.Tensor(y_val.reshape(-1,self.model.seq_len,x_train.shape[1])))
+        
+        x=torch.Tensor(x_val.reshape(-1,self.model.seq_len,x_val.shape[1]))
+        y=torch.Tensor(y_val.reshape(-1,self.model.seq_len,1))        
+        valset = data.TensorDataset(x, y)
         val_loader = data.DataLoader(dataset=valset,
                                      batch_size=self.model.batch_size,
                                      shuffle=False, ##x_val已经打乱过了
@@ -95,9 +97,9 @@ class LSTM():
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
         #                             momentum=0.9, weight_decay=args.weight_decay)
-        scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+        # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
         
-        for epoch in tqdm(range(12)):
+        for epoch in tqdm(range(100)):
             # 训练步骤开始
             self.model.train()
             train_loss=[]
@@ -110,26 +112,25 @@ class LSTM():
                 optimizer.step()
             res=abs(pred-y)/y
             print('train mape:',float(1-res.mean()))
-            scheduler.step()
+            # scheduler.step()
             
-            if epoch%5==0:
+            if epoch%10==0:
                 # 验证步骤开始
                 self.model.eval()
                 val_mape = []
-                with torch.no_grad():
-                    for x,y in val_loader:
-                        pred = self.model(x)
-                        res=abs(pred-y)/y
-                        val_mape.append(float(1-res.mean()))
-                        # val_loss +=loss
+                for x,y in val_loader:
+                    pred = self.model(x)
+                    res=abs(pred-y)/y
+                    val_mape.append(float(1-res.mean()))
                 print('val mean loss:',np.mean(val_mape))
 
     def test(self,x_test, y_test, model):   
         
-        x_test = self.scaler_x.fit_transform(x_test)
-        # y_train = self.scaler_y.fit_transform(y_test[:,None])
+        x_test = self.scaler_x.transform(x_test)
         import torch.utils.data as data
-        testset = data.TensorDataset(torch.Tensor(x_test.reshape(-1,self.model.seq_len,x_test.shape[1])), torch.Tensor(y_test.values.reshape(-1,self.model.seq_len,x_test.shape[1])))
+        x=torch.Tensor(x_test.reshape(-1,self.model.seq_len,x_test.shape[1]))
+        y=torch.Tensor(y_test.values.reshape(-1,self.model.seq_len,1))  
+        testset = data.TensorDataset(x, y)
         test_loader = data.DataLoader(dataset=testset,
                                        batch_size=testset.tensors[0].shape[0], ##相当于整个batch
                                        shuffle=False, ##x_train已经打乱过了
@@ -147,7 +148,8 @@ class LSTM():
         res=pd.concat([pred,y],axis=1)
         res.columns=['pred','gt']
         from utils.plot import plot_without_date
-        plot_without_date(res,'res',cols = ['pred','gt'])    
+        plot_without_date(res,'res',cols = ['pred','gt']) 
+        self.res=res
         
 if __name__=='__main__':
     ##项目目录加入环境变量
@@ -156,8 +158,9 @@ if __name__=='__main__':
     ####Step1:read raw data
     from dataset import Dataset
     dataset=Dataset()
-    df=dataset.load_system_tang(mode='ts',y_shift=96).data
-    
+    # df=dataset.load_system_tang(mode='ts',y_shift=96).data
+    df=dataset.load_system1(mode='ts',y_shift=96).data
+    df=df[['date','load','target']]
     ####Step3:有效的特征工程feature
     # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
     # df=date_to_timeFeatures(df)
@@ -167,7 +170,7 @@ if __name__=='__main__':
     ##要按天打乱，确保train,val,test同分布
     from utils.tools import dataset_split
     del df['date']
-    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1])
+    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
     testset=testset.reset_index(drop=True)

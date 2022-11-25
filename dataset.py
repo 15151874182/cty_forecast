@@ -27,7 +27,7 @@ class Dataset():
         sys.path.append(project_path)
             
     def load_system1(self,mode='normal',y_shift=96):
-        self.data=pd.read_csv('./data/system/system1.csv')
+        self.data=pd.read_csv('../data/system/system1.csv')
         if mode=='normal': ##普通模式，用协变量tmp预测load，load就是target
             self.data.columns=['date', 'tmp', 'target']
             self.feas=self.data[['date','tmp']] 
@@ -43,7 +43,7 @@ class Dataset():
         return self
 
     def load_system2(self,mode='normal',y_shift=96):
-        self.data=pd.read_csv('./data/system/system2.csv')
+        self.data=pd.read_csv('../data/system/system2.csv')
         if mode=='normal': ##普通模式，用协变量tmp预测load，load就是target
             self.data.columns=['date', 'tmp', 'target']
             self.feas=self.data[['date','tmp']] 
@@ -72,4 +72,11 @@ class Dataset():
             self.target=self.data['target']   
         self.freq=1440/int(pd.infer_freq(self.data['date'].head(5))[:-1])
         self.days=len(self.data)/self.freq
+        return self
+    
+    def load_busbar1_cluster(self): ##这个数据母线聚类用的
+        self.data=pd.read_csv('../data/busbar/busbar1.csv')
+        return self
+    def load_busbar1_duibi(self): ##wulin的对比
+        self.data=pd.read_excel('../data/busbar/对比.xlsx')
         return self
