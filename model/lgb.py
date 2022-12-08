@@ -15,7 +15,7 @@ import joblib
 
 import optuna
 from sklearn.model_selection import train_test_split,KFold
-from sklearn.metrics import mean_squared_error,mean_absolute_error
+from sklearn.metrics import mean_squared_error,mean_absolute_percentage_error,mean_pinball_loss
 import lightgbm as lgbm
 from config import lgb_param
 import warnings
@@ -102,28 +102,42 @@ if __name__=='__main__':
     sys.path.append(project_path)
     ####Step1:read raw data
     np.random.seed(10)
-    f='../data/wind/ghgr.csv'
-    df=pd.read_csv(f) ##df原始数据
-    
+    from dataset import Dataset
+    dataset=Dataset()
+    # df=dataset.load_system_tang(mode='ts').data
+    # df=dataset.load_system1(mode='ts').data
+    df=dataset.load_wind1().data
+##['date', 'ws30', 'wd30', 'ws50', 'wd50', 'ws70', 'wd70', 't_50', 'p_50',
+##       'target']
     ####Step2:data process
     #method1:直接插值补全，以此对比和dataclean的效果
-    del df['temp_50_XXL'],df['press_50_XXL']
-    df=df.loc[:,~df.columns.str.contains('Unnamed')]
-    df.interpolate(method="linear",axis=0,inplace=True)
+    # del df['temp_50_XXL'],df['press_50_XXL']
+    # df=df.loc[:,~df.columns.str.contains('Unnamed')]
+    # df.interpolate(method="linear",axis=0,inplace=True)
+    df=df[['date',
+           'ws30', 
+           # 'wd30', 
+           # 'ws50',
+            # 'wd50',
+           'ws70',
+            # 'wd70',
+            # 't_50', 
+           'p_50',
+           'target']]
     df['date']=pd.to_datetime(df['date'])
     #method2:dataclean
     
     
     ####Step3:有效的特征工程feature
-    from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
-    df=date_to_timeFeatures(df)
-    df=wd_to_sincos_wd(df,['dir_50_XXL'],delete=True)
+    # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
+    # df=date_to_timeFeatures(df)
+    # df=wd_to_sincos_wd(df,['wd50'],delete=True)
     
     ####Step4: 划分数据集
     ##要按天打乱，确保train,val,test同分布
     del df['date'] 
     from utils.tools import dataset_split
-    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1])
+    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.8,0.1,0.1],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
     testset=testset.reset_index(drop=True)
@@ -132,41 +146,55 @@ if __name__=='__main__':
     # trainset=IMF(trainset,col='load',length = 96)
     # valset=IMF(valset,col='load',length = 96)
     # testset=IMF(testset,col='load',length = 96)
-    y_train=trainset.pop('load')
+    y_train=trainset.pop('target')
     x_train=trainset
-    y_val=valset.pop('load')
+    y_val=valset.pop('target')
     x_val=valset
-    y_test=testset.pop('load')
+    y_test=testset.pop('target')
     x_test=testset  
     
     ###Step5: 自动调参
-    def objective(trial):
-        lgb=LGB(trial=trial,param=lgb_param)
-        trainded_model=lgb.train(x_train, y_train, x_val, y_val)
-        pred,gt=lgb.test(x_val,y_val,trainded_model)
-        loss=mean_squared_error(pred.values, gt.values)
-        return loss
+    # def objective(trial):
+    #     lgb=LGB(trial=trial,param=lgb_param)
+    #     trainded_model=lgb.train(x_train, y_train, x_val, y_val)
+    #     pred,gt=lgb.test(x_val,y_val,trainded_model)
+    #     loss=mean_squared_error(pred.values, gt.values)
+    #     return loss
     
-    # study=optuna.create_study(direction='maximize')
-    study=optuna.create_study(direction='minimize')
-    n_trials=50 # try50次
-    study.optimize(objective, n_trials=n_trials)
+    # # study=optuna.create_study(direction='maximize')
+    # study=optuna.create_study(direction='minimize')
+    # n_trials=50 # try50次
+    # study.optimize(objective, n_trials=n_trials)
     
-    ####Step6: 使用优化超参训练+推断
-    new_lgb_param=lgb_param.copy()
-    new_lgb_param.update(study.best_params) ##更新超参
-    lgb=LGB(trial=False,param=new_lgb_param)    
+    # ####Step6: 使用优化超参训练+推断
+    # new_lgb_param=lgb_param.copy()
+    # new_lgb_param.update(study.best_params) ##更新超参
+    # lgb=LGB(trial=False,param=new_lgb_param)    
 
-    lgb=LGB(trial=False,param=new_lgb_param)
+    lgb=LGB(trial=False,param=lgb_param)
     trainded_model=lgb.train(x_train, y_train, x_val, y_val)
     pred_old,gt=lgb.test(x_test,y_test,trainded_model)
-    old_loss=mean_squared_error(pred_old.values, gt.values)
+    
+    # from PyEMD import EMD 
+    # emd = EMD()
+    # ts=np.array(pred_old).reshape(-1)
+    # emd.emd(ts)
+    # imfs, res = emd.get_imfs_and_residue() 
+    # pred_old=res
+    # for i in range(0,imfs.shape[0]):
+    #     pred_old+=imfs[i] ##将imfs[0]高频噪音去掉，得到平滑的曲线
+    
+    pred_old=pd.DataFrame(pred_old) ##后面统计计算/需要pred是dataframe格式
+    # old_loss=1-mean_absolute_percentage_error(gt.values,pred_old.values)
+    old_loss=mean_squared_error(gt.values,pred_old.values)
     print('old_loss:',old_loss)
     res=pd.concat([pred_old.reset_index(drop=True),gt.reset_index(drop=True)],axis=1)
     res.columns=['pred_old','gt']
-    from utils.plot import plot_without_date
-    plot_without_date(res,'res',cols = ['pred_old','gt'])           
+    # from utils.plot import plot_without_date
+    # plot_without_date(res,'res',cols = ['pred_old','gt'])           
         
         
-        
+
+# # ts = 2*np.sin(2*np.pi*15*t) +4*np.sin(2*np.pi*10*t)*np.sin(2*np.pi*t*0.1)+np.sin(2*np.pi*5*t)
+      
         

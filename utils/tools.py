@@ -77,3 +77,14 @@ def dataset_split(df,n,ratio=[0.7,0.2,0.1],mode=1):
     testset=df.iloc[test_ids]
       
     return trainset,valset,testset
+
+####皮尔森相关系数
+def pearson_coe(df,label_name='load'):####label_name是目标的名字，比如'load','nextday'
+    # del df['datetime']
+    label=df[label_name]
+    pearson_dict={}
+    for f in df.columns:
+        k=label.corr(df[f],method="pearson") #皮尔森相关性系数
+        pearson_dict['{}-{}'.format(label_name,f)]=k
+    pearson_dict=sorted(pearson_dict.items(),key=lambda x:abs(x[1]),reverse=True)
+    print(pearson_dict)

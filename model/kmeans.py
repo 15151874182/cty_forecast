@@ -18,21 +18,28 @@ if __name__=='__main__':
     dataset=Dataset()
     df=dataset.load_busbar1_cluster().data
     df=df.dropna()
+    df[df==0]=1e-2 ##0值赋予一个很小的数，方便计算增长率
     
     df1=df.iloc[:,:200]
     df1['bus_id']=df['bus_id'] ##270*(200+bus_id)
     df1['bus_id']=df1['bus_id'].apply(lambda x: str(x))
     
     bus_id=df.pop('bus_id')
+    increase=df.pct_change(periods=1,fill_method='pad',axis=1)
     statistic=df.T.describe().T  ##计算出统计量
-    del statistic['count']   ##数量没用
+    statistic['increase']=increase.iloc[:,1:].mean(axis=1)##手动增加增长率指标
+    statistic=statistic[['mean','std','increase']]
+    # del statistic['count'],statistic['count'],   ##数量没用
     from sklearn.preprocessing import StandardScaler
     stand_scaler = StandardScaler()
     xx = stand_scaler.fit_transform(statistic) ##中心化
-    from sklearn.decomposition import PCA  
-    p_scaler = PCA(n_components='mle') #手动确定
-    xx = p_scaler.fit_transform(xx)  ##降维
-    xx = stand_scaler.fit_transform(xx) ##xx是降维后，中心化后的中间产物
+    
+    # from sklearn.decomposition import PCA  
+    # # p_scaler = PCA(n_components=3) #手动确定
+    # p_scaler = PCA(n_components='mle') #手动确定
+    # # p_scaler = PCA(n_components=0.97, svd_solver='full') ##保留95%的信息
+    # xx = p_scaler.fit_transform(xx)  ##降维
+    # xx = stand_scaler.fit_transform(xx) ##xx是降维后，中心化后的中间产物
     
     ###下面代码可以看图挑选出合适的n_clusters
     # losses = []  # 存放每次结果的误差平方和
@@ -46,13 +53,16 @@ if __name__=='__main__':
     # plt.plot(X,losses,'o-')
     
     from sklearn.cluster import KMeans
-    k_scaler=KMeans(n_clusters=5,random_state=1)
+    k_scaler=KMeans(n_clusters=5,
+                    # random_state=1,
+                    n_init=300,
+                    max_iter=300,)
     k_scaler.fit(xx)
-    ##聚类效果可视化
-    # colors = ['r', 'y', 'g', 'b', 'c', 'k'] ##长度要大于label数量
-    # for id, label in enumerate(k_scaler.labels_):
-    #     plt.scatter(xx[id][0], xx[id][1], color = colors[label],marker='o',s=4)
-    # plt.show()
+    #聚类效果可视化
+    colors = ['r', 'y', 'g', 'b', 'c', 'k'] ##长度要大于label数量
+    for id, label in enumerate(k_scaler.labels_):
+        plt.scatter(xx[id][0], xx[id][1], color = colors[label],marker='o',s=4)
+    plt.show()
     
     ####聚类结果res
     bus_id=pd.DataFrame(bus_id)

@@ -34,11 +34,10 @@ if __name__=='__main__':
     sys.path.append(project_path)
     ####Step1:read raw data
     np.random.seed(10)
-    # f='../data/tang/nantongddkj.csv'
-    # f='../data/tang/ddkj20201111-20221111.txt'
-    f='../data/system/zhejiang_quanshehui.csv'
-    # f='https://raw.githubusercontent.com/facebook/prophet/main/examples/example_wp_log_peyton_manning.csv'
-    df=pd.read_csv(f) ##df原始数据
+    
+    from dataset import Dataset
+    dataset=Dataset()
+    df=dataset.load_system1().data
     
     
     # df=df.iloc[:64704,:]
@@ -47,27 +46,27 @@ if __name__=='__main__':
     # testset=df.iloc[35040:,:]     
     ####Step2:data process
     #method1:直接插值补全，以此对比和dataclean的效果
-    df=df.loc[:,~df.columns.str.contains('Unnamed')]
+    # df=df.loc[:,~df.columns.str.contains('Unnamed')]
     df.interpolate(method="linear",axis=0,inplace=True)
-    df=df[['nextday_date','today']]
+    df=df[['date','target']]
     df.columns=['ds','y']  ###prophet的命名要求
     df['ds']=pd.to_datetime(df['ds'])
-    df['ds']=df['ds']-pd.Timedelta(1,unit='d') ##nextdaydate日期要减一天
+    # df['ds']=df['ds']-pd.Timedelta(1,unit='d') ##nextdaydate日期要减一天
     df['cap'] = 80000
     trainset=df.iloc[9983:45023,:]
-    testset=df.iloc[45023:45023+96*365,:] 
+    testset=df.iloc[45023:45023+96*1,:] 
     
     
     # length=int(len(df)*0.8)
     # trainset=df.iloc[:length]
     # testset=df.iloc[length:,:]         
         
-    model = Prophet(growth='logistic')
-    # model = Prophet()
+    # model = Prophet(growth='logistic')
+    model = Prophet()
     model.add_country_holidays(country_name='CN') ##增加节假日
     model.fit(trainset)
-    future = model.make_future_dataframe(periods=96*365,freq='15t',include_history=False)
-    future['cap']=80000
+    future = model.make_future_dataframe(periods=96*1,freq='15t',include_history=False)
+    # future['cap']=80000
     forecast = model.predict(future)
     # forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']].tail()
     fig1 = model.plot(forecast)
