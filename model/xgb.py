@@ -103,14 +103,14 @@ if __name__=='__main__':
     
     
     ####Step3:有效的特征工程feature
-    from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
+    from my_utils.feature import date_to_timeFeatures, wd_to_sincos_wd
     df=date_to_timeFeatures(df)
     df=wd_to_sincos_wd(df,['dir_50_XXL'],delete=True)
     
     ####Step4: 划分数据集
     ##要按天打乱，确保train,val,test同分布
     del df['date'] 
-    from utils.tools import dataset_split
+    from my_utils.tools import dataset_split
     trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1])
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
@@ -152,7 +152,7 @@ if __name__=='__main__':
     print('old_loss:',old_loss)
     res=pd.concat([pred_old.reset_index(drop=True),gt.reset_index(drop=True)],axis=1)
     res.columns=['pred_old','gt']
-    from utils.plot import plot_without_date
+    from my_utils.plot import plot_without_date
     plot_without_date(res,'res',cols = ['pred_old','gt'])        
         
         

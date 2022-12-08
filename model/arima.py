@@ -99,7 +99,7 @@ if __name__=='__main__':
     print('loss:',loss)
     res=pd.concat([pred.reset_index(drop=True),gt.reset_index(drop=True)],axis=1)
     res.columns=['pred_old','gt']
-    from utils.plot import plot_without_date
+    from my_utils.plot import plot_without_date
     plot_without_date(res,'res',cols = ['pred_old','gt']) 
 
         

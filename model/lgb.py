@@ -136,7 +136,7 @@ if __name__=='__main__':
     ####Step4: 划分数据集
     ##要按天打乱，确保train,val,test同分布
     del df['date'] 
-    from utils.tools import dataset_split
+    from my_utils.tools import dataset_split
     trainset,valset,testset=dataset_split(df,n=96,ratio=[0.8,0.1,0.1],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)

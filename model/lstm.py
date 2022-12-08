@@ -151,7 +151,7 @@ class LSTM():
         y=pd.DataFrame(y.reshape(-1))
         res=pd.concat([pred,y],axis=1)
         res.columns=['pred','gt']
-        from utils.plot import plot_without_date
+        from my_utils.plot import plot_without_date
         plot_without_date(res,'res',cols = ['pred','gt']) 
         self.res=res
         
@@ -172,7 +172,7 @@ if __name__=='__main__':
     
     ####Step4: 划分数据集
     ##要按天打乱，确保train,val,test同分布
-    from utils.tools import dataset_split
+    from my_utils.tools import dataset_split
     del df['date']
     trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1],mode=2)
     trainset=trainset.reset_index(drop=True)
