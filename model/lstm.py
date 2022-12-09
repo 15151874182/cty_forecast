@@ -8,6 +8,7 @@ from matplotlib import pyplot as plt
 import joblib
 
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error,mean_absolute_percentage_error,mean_pinball_loss
 from tqdm import tqdm
 import torch
 import torch.autograd as autograd
@@ -44,7 +45,7 @@ class LstmPyorch(nn.Module):
         h_0 = torch.randn(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
         c_0 = torch.randn(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
         # output(batch_size, fea_size, num_directions * hidden_size)
-        output, _ = self.lstm(x, (h_0, c_0)) # [16, 96, 3]
+        output, (hidden, cell) = self.lstm(x, (h_0, c_0)) # [16, 96, 3]
         pred = self.linear(output)  # [16, 96, 1]
         return pred    
 
@@ -56,10 +57,10 @@ class LSTM():
     def build_model(self,x_train):
         self.model=LstmPyorch(fea_size=x_train.shape[1],
                          seq_len=96,
-                         hidden_size=6,
+                         hidden_size=20,
                          num_layers=1,
                          output_size=1, 
-                         batch_size=6).to(device)
+                         batch_size=32).to(device)
         return self.model      
 
 
@@ -99,7 +100,7 @@ class LSTM():
         #                             momentum=0.9, weight_decay=args.weight_decay)
         # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
         
-        for epoch in tqdm(range(100)):
+        for epoch in tqdm(range(200)):
             # 训练步骤开始
             self.model.train()
             train_loss=[]
@@ -116,15 +117,15 @@ class LSTM():
             print('train mape:',float(1-res.mean()))
             # scheduler.step()
             
-            if epoch%10==0:
-                # 验证步骤开始
-                self.model.eval()
-                val_mape = []
-                for x,y in val_loader:
-                    pred = self.model(x)
-                    res=abs(pred-y)/y
-                    val_mape.append(float(1-res.mean()))
-                print('val mean loss:',np.mean(val_mape))
+            # if epoch%10==0:
+            #     # 验证步骤开始
+            #     self.model.eval()
+            #     val_mape = []
+            #     for x,y in val_loader:
+            #         pred = self.model(x)
+            #         res=abs(pred-y)/y
+            #         val_mape.append(float(1-res.mean()))
+            #     print('val mean loss:',np.mean(val_mape))
 
     def test(self,x_test, y_test, model):   
         
@@ -142,9 +143,9 @@ class LSTM():
             x=x.to(device)
             y=y.to(device)
             pred = self.model(x)
-            pred=pred.detach().numpy().reshape(-1,1)
+            pred=pred.detach().cpu().numpy().reshape(-1,1)
             pred=self.scaler_y.inverse_transform(pred)
-            y=y.numpy().reshape(-1,1)
+            y=y.cpu().numpy().reshape(-1,1)
             res=abs(pred-y)/y
             print('test mape:',float(1-res.mean()))   
         pred=pd.DataFrame(pred)
@@ -152,7 +153,7 @@ class LSTM():
         res=pd.concat([pred,y],axis=1)
         res.columns=['pred','gt']
         from my_utils.plot import plot_without_date
-        plot_without_date(res,'res',cols = ['pred','gt']) 
+        plot_without_date(res[:600],'res',cols = ['pred','gt']) 
         self.res=res
         
 if __name__=='__main__':

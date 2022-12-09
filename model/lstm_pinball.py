@@ -2,13 +2,13 @@ import os,sys
 import datetime
 import math
 import scipy
-import copy
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import joblib
 
 from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error,mean_absolute_percentage_error,mean_pinball_loss
 from tqdm import tqdm
 import torch
 import torch.autograd as autograd
@@ -24,8 +24,21 @@ torch.manual_seed(0)
 np.random.seed(0)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class DeeparPyorch(nn.Module):
-    def __init__(self, fea_size, seq_len, hidden_size, num_layers, batch_size):
+class PinballLoss(nn.Module):
+    """ Pinball loss at all confidence levels.
+    """
+    def __init__(self):
+        super(PinballLoss, self).__init__()
+
+    def forward(self, pred, gt, alpha):
+        diff = gt - pred
+        sign = diff >= 0
+        loss = alpha * sign * diff - (1 - alpha) * (~sign) * diff
+        return loss.mean()
+
+
+class LstmPyorch(nn.Module):
+    def __init__(self, fea_size, seq_len, hidden_size, num_layers, output_size, batch_size):
         super().__init__()
         # self.trial=trial
         # hidden_size=self.trial.suggest_int('hidden_size', 1,20,step=1),
@@ -34,58 +47,39 @@ class DeeparPyorch(nn.Module):
         self.seq_len=seq_len
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.output_size = output_size
         self.num_directions = 1 # 单向LSTM
         self.batch_size = batch_size
         self.lstm = nn.LSTM(self.fea_size, self.hidden_size, self.num_layers, batch_first=True)
-        # initialize LSTM forget gate bias to be 1 as recommanded by http://proceedings.mlr.press/v37/jozefowicz15.pdf
-        for names in self.lstm._all_weights:
-            for name in filter(lambda n: "bias" in n, names):
-                bias = getattr(self.lstm, name)
-                n = bias.size(0)
-                start, end = n // 4, n // 2
-                bias.data[start:end].fill_(1.)
-                
-        self.mu = nn.Linear(self.hidden_size * self.num_layers, 1)
-        self.std=nn.Sequential(nn.Linear(self.hidden_size * self.num_layers, 1),
-                               nn.Softplus()# softplus to make sure standard deviation is positive
-                               )
-    def forward(self, x, hidden, cell):
-        output, (hidden, cell) = self.lstm(x, (hidden, cell))  
-        h=hidden.contiguous() ##h要参与中间计算，但是不能影响hidden,contiguous相当于深拷贝
-        h = h.permute(1,0,2).reshape(hidden.shape[1], -1)
-        mu = self.mu(h)
-        std = self.std(h)  
-        return mu, std, hidden, cell
-    
-class DeepAR():
+        self.linear = nn.Linear(self.hidden_size, self.output_size)
+
+    def forward(self, x):
+        batch_size, fea_size = x.shape[0], x.shape[1]
+        h_0 = torch.randn(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
+        c_0 = torch.randn(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
+        # output(batch_size, fea_size, num_directions * hidden_size)
+        output, (hidden, cell) = self.lstm(x, (h_0, c_0)) # [16, 96, 3]
+        pred = self.linear(output)  # [16, 96, 1]
+        return pred    
+
+class LSTM():
     
     def __init__(self):
         pass
-    
-    def log_prob_loss_fn(self,mu,std,gt):
-        '''
-        Compute using gaussian the log-likehood which needs to be maximized. Ignore time steps where labels are missing.
-        Args:
-            mu: (Variable) dimension [batch_size] - estimated mean at time step t
-            sigma: (Variable) dimension [batch_size] - estimated standard deviation at time step t
-            labels: (Variable) dimension [batch_size] z_t
-        Returns:
-            loss: (Variable) average log-likelihood loss across the batch
-        '''
-        distribution = torch.distributions.normal.Normal(mu, std)
-        likelihood = distribution.log_prob(gt)
-        return -torch.mean(likelihood).to(device)
-    
+        
     def build_model(self,x_train):
-        self.model=DeeparPyorch(fea_size=x_train.shape[1],
+        self.model=LstmPyorch(fea_size=x_train.shape[1],
                          seq_len=96,
                          hidden_size=6,
-                         num_layers=2,
-                         batch_size=4).to(device)
+                         num_layers=1,
+                         output_size=1, 
+                         batch_size=3).to(device)
         return self.model      
 
 
     def train(self, x_train, y_train, x_val, y_val):###df包含label
+        self.model_upper = self.build_model(x_train)
+        self.model_lower = self.build_model(x_train)
         self.model = self.build_model(x_train)
         # 先转换成torch能识别的dataset
         import torch.utils.data as data
@@ -114,34 +108,45 @@ class DeepAR():
                                      shuffle=False, ##x_val已经打乱过了
                                      num_workers=1,
                                      drop_last=True)        
+        loss_fn = PinballLoss().to(device)
+        optimizer_upper = torch.optim.Adam(self.model_upper.parameters(), lr=1e-3,
+                                     weight_decay=0)
+        optimizer_lower = torch.optim.Adam(self.model_lower.parameters(), lr=1e-3,
+                                     weight_decay=0)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3,
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
         #                             momentum=0.9, weight_decay=args.weight_decay)
         # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
-        
-        for epoch in tqdm(range(1)):
+        self.model_upper.train()
+        self.model_lower.train()
+        self.model.train()        
+        for epoch in tqdm(range(20)):
             # 训练步骤开始
-            self.model.train()
-            loss=0
-            hidden=cell=None
             for x,y in train_loader:
                 x=x.to(device)
                 y=y.to(device)
-                if hidden==None: ##lstm的hidden和cell初始化
-                    hidden = torch.randn(self.model.num_directions * self.model.num_layers, x.shape[0], self.model.hidden_size).to(device)
-                    cell = torch.randn(self.model.num_directions * self.model.num_layers, x.shape[0], self.model.hidden_size).to(device)                
-                for t in range(x.shape[1]):
-                    mu, std, hidden, cell = self.model(x[:,t,:].unsqueeze(1), hidden, cell)
-                    loss += self.log_prob_loss_fn(mu, std, y[:,t,:])
                 
-                print('loss:',loss)
-                # 优化器优化模型
+                pred_upper = self.model_upper(x)
+                loss_90=loss_fn(pred_upper,y,alpha=1.0)    
+                optimizer_upper.zero_grad()
+                loss_90.backward()
+                optimizer_upper.step()
+                
+                pred_lower = self.model_lower(x)
+                loss_10=loss_fn(pred_lower,y,alpha=0.0)    
+                optimizer_lower.zero_grad()
+                loss_10.backward()
+                optimizer_lower.step()                
+
+                pred = self.model(x)
+                loss_50=loss_fn(pred,y,alpha=0.5)    
                 optimizer.zero_grad()
-                loss.backward()
+                loss_50.backward()
                 optimizer.step()
-            # res=abs(pred-y)/y
-            # print('train mape:',float(1-res.mean()))
+                
+            res=abs(pred-y)/y
+            print('train mape:',float(1-res.mean()))
             # scheduler.step()
             
             # if epoch%10==0:
@@ -155,7 +160,9 @@ class DeepAR():
             #     print('val mean loss:',np.mean(val_mape))
 
     def test(self,x_test, y_test, model):   
-        
+        self.model_upper.eval()
+        self.model_lower.eval()
+        self.model.eval()        
         x_test = self.scaler_x.transform(x_test)
         import torch.utils.data as data
         x=torch.Tensor(x_test.reshape(-1,self.model.seq_len,x_test.shape[1]))
@@ -165,25 +172,35 @@ class DeepAR():
                                        batch_size=testset.tensors[0].shape[0], ##相当于整个batch
                                        shuffle=False, ##x_train已经打乱过了
                                        num_workers=1,
-                                       drop_last=False)   
-        
+                                       drop_last=False)    
         for x,y in test_loader:
             x=x.to(device)
             y=y.to(device)
+
+            pred_upper = self.model_upper(x)
+            pred_upper=pred_upper.detach().cpu().numpy().reshape(-1,1)
+            pred_upper=self.scaler_y.inverse_transform(pred_upper)
+
+            pred_lower = self.model_lower(x)
+            pred_lower=pred_lower.detach().cpu().numpy().reshape(-1,1)
+            pred_lower=self.scaler_y.inverse_transform(pred_lower)
+            
             pred = self.model(x)
-            pred=pred.detach().numpy().reshape(-1,1)
+            pred=pred.detach().cpu().numpy().reshape(-1,1)
             pred=self.scaler_y.inverse_transform(pred)
-            y=y.numpy().reshape(-1,1)
+            
+            y=y.cpu().numpy().reshape(-1,1)
             res=abs(pred-y)/y
-            print('test mape:',float(1-res.mean()))   
+            print('test mape:',float(1-res.mean()))  
             
-            
+        pred_upper=pd.DataFrame(pred_upper)
+        pred_lower=pd.DataFrame(pred_lower)
         pred=pd.DataFrame(pred)
         y=pd.DataFrame(y.reshape(-1))
-        res=pd.concat([pred,y],axis=1)
-        res.columns=['pred','gt']
+        res=pd.concat([pred_upper,pred_lower,pred,y],axis=1)
+        res.columns=['pred_upper','pred_lower','pred','gt']
         from my_utils.plot import plot_without_date
-        plot_without_date(res,'res',cols = ['pred','gt']) 
+        plot_without_date(res[:600],'res',cols = ['pred_upper','pred_lower','pred','gt']) 
         self.res=res
         
 if __name__=='__main__':
@@ -217,6 +234,6 @@ if __name__=='__main__':
     y_test=testset.pop('target')
     x_test=testset  
     
-    deepAR=DeepAR()
-    deepAR.train(x_train, y_train, x_val, y_val)
-    deepAR.test(x_test,y_test,deepAR.model)
+    lstm=LSTM()
+    lstm.train(x_train, y_train, x_val, y_val)
+    lstm.test(x_test,y_test,lstm.model)
