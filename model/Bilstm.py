@@ -35,14 +35,16 @@ class LstmPyorch(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.output_size = output_size
-        self.num_directions = 1 # 单向LSTM
+        self.num_directions = 2 # 双向LSTM
         self.batch_size = batch_size
-        self.lstm = nn.LSTM(self.fea_size, self.hidden_size, self.num_layers, batch_first=True)
-        self.linear = nn.Linear(self.hidden_size, self.output_size)
+        self.lstm = nn.LSTM(self.fea_size, self.hidden_size, self.num_layers, batch_first=True,bidirectional=True)
+        self.linear = nn.Linear(self.num_directions*self.hidden_size, self.output_size)
 
     def forward(self, x):
-        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size)*x[0].std()+x[0].mean().to(device)
-        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size)*x[0].std()+x[0].mean().to(device)
+        batch_size, fea_size = x.shape[0], x.shape[1]
+        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
+        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
+        # output(batch_size, fea_size, num_directions * hidden_size)
         output, (hidden, cell) = self.lstm(x,(h_0,c_0)) # [16, 96, 3]
         pred = self.linear(output)  # [16, 96, 1]
         return pred    
@@ -96,9 +98,9 @@ class LSTM():
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
         #                             momentum=0.9, weight_decay=args.weight_decay)
-        # scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
+        scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
         
-        for epoch in tqdm(range(300)):
+        for epoch in tqdm(range(100)):
             # 训练步骤开始
             self.model.train()
             train_loss=[]
@@ -111,19 +113,19 @@ class LSTM():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-            # res=abs(pred-y)/y
-            # print('train mape:',float(1-res.mean()))
+            res=abs(pred-y)/y
+            print('train mape:',float(1-res.mean()))
             
-            # pred=pred.detach().cpu().numpy().reshape(-1,1)
-            # y=y.cpu().numpy().reshape(-1,1)
-            # pred=pd.DataFrame(pred)
-            # y=pd.DataFrame(y.reshape(-1))
-            # res=pd.concat([pred,y],axis=1)
-            # res.columns=['pred','gt']
-            # from my_utils.plot import plot_without_date
-            # plot_without_date(res[:600],'res',cols = ['pred','gt'])             
+            pred=pred.detach().cpu().numpy().reshape(-1,1)
+            y=y.cpu().numpy().reshape(-1,1)
+            pred=pd.DataFrame(pred)
+            y=pd.DataFrame(y.reshape(-1))
+            res=pd.concat([pred,y],axis=1)
+            res.columns=['pred','gt']
+            from my_utils.plot import plot_without_date
+            plot_without_date(res[:300],'res',cols = ['pred','gt'])             
 
-            # scheduler.step()
+            scheduler.step()
             
             # if epoch%10==0:
             #     # 验证步骤开始
@@ -161,7 +163,7 @@ class LSTM():
         res=pd.concat([pred,y],axis=1)
         res.columns=['pred','gt']
         from my_utils.plot import plot_without_date
-        plot_without_date(res[:600],'res',cols = ['pred','gt']) 
+        plot_without_date(res[:300],'res',cols = ['pred','gt']) 
         self.res=res
         
 if __name__=='__main__':
@@ -175,11 +177,6 @@ if __name__=='__main__':
     # df=dataset.load_wind1(mode='ts',y_shift=96).data
     df=dataset.load_system1(mode='ts',y_shift=96).data
     df=df[['date','load','target']]
-    df['day-1']=df['load'].shift(96*1)
-    df['day-2']=df['load'].shift(96*2)
-    df['day-3']=df['load'].shift(96*3)
-    df=df.dropna()
-    # df=df.loc[96:,:]
     # df=df[['date','ws30','target']]
     ####Step3:有效的特征工程feature
     # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd

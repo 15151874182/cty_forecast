@@ -33,8 +33,8 @@ class Dataset():
             self.feas=self.data[['date','tmp']] 
             self.target=self.data['target']
         elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
-            self.data['target']=self.data['load'].shift(y_shift)
-            self.data=self.data.iloc[y_shift:,:]
+            self.data['target']=self.data['load'].shift(-y_shift)
+            self.data=self.data.iloc[:-y_shift,:]
             self.data=self.data.reset_index(drop=True)
             self.feas=self.data[['date','tmp','load']] 
             self.target=self.data['target']   
@@ -49,8 +49,8 @@ class Dataset():
             self.feas=self.data[['date','tmp']] 
             self.target=self.data['target']
         elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
-            self.data['target']=self.data['load'].shift(y_shift)
-            self.data=self.data.iloc[y_shift:,:]
+            self.data['target']=self.data['load'].shift(-y_shift)
+            self.data=self.data.iloc[:-y_shift,:]
             self.data=self.data.reset_index(drop=True)
             self.feas=self.data[['date','tmp','load']] 
             self.target=self.data['target']   
@@ -65,8 +65,8 @@ class Dataset():
             self.feas=self.data['date'] 
             self.target=self.data['target']
         elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
-            self.data['target']=self.data['load'].shift(y_shift)
-            self.data=self.data.iloc[y_shift:,:]
+            self.data['target']=self.data['load'].shift(-y_shift)
+            self.data=self.data.iloc[:-y_shift,:]
             self.data=self.data.reset_index(drop=True)
             self.feas=self.data[['date','load']] 
             self.target=self.data['target']   
@@ -89,8 +89,8 @@ class Dataset():
             self.feas=self.data[['date', 'ws30', 'wd30', 'ws50', 'wd50', 'ws70', 'wd70', 't_50', 'p_50']] 
             self.target=self.data['target']
         elif mode=='ts':##time_series模式，用load自回归+协变量预测y_shift个点后的load，shift load是target,前面的小部分数据会丢掉
-            self.data['target']=self.data['load'].shift(y_shift)
-            self.data=self.data.iloc[y_shift:,:]
+            self.data['target']=self.data['load'].shift(-y_shift)
+            self.data=self.data.iloc[:-y_shift,:]
             self.data=self.data.reset_index(drop=True)
             self.feas=self.data[['date', 'ws30', 'wd30', 'ws50', 'wd50', 'ws70', 'wd70', 't_50', 'p_50']] 
             self.target=self.data['target'] 

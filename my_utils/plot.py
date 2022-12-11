@@ -74,3 +74,29 @@ def plot_without_date(df,filename,cols = ["actual","predict_load"]):
     # plt.savefig(f"./figure/{filename}.png",dpi=300,bbox_inches='tight',pad_inches=0.0)
     plt.show()
     # plt.close()
+
+def plot_fill_between(df,filename,cols = ["actual","predict_load"]):
+
+    #将cols列全部转换成数值类型
+    for col in cols:
+        df[col] = df[col].apply(pd.to_numeric, errors='coerce')
+    
+    #选择我们想要的列
+    df = df.loc[:,cols]
+
+    #画图进行对比,设置画布大小
+    plt.figure(figsize=(30,10))
+    #解决中文或者是负号无法显示的情况
+    mpl.rcParams["font.sans-serif"] = ["SimHei"]
+    mpl.rcParams['axes.unicode_minus'] = False
+    
+    #画出所有的列
+    for col in cols:
+        plt.plot(df.loc[:,col],label=col,alpha=0.6)
+    plt.fill_between(df.index,df['pred_lower'],df['pred_upper'],color='b',alpha=0.2)
+    print(f"画图：{filename}")
+    plt.legend(loc="upper left",fontsize='x-large')
+    plt.title(f"{filename}",fontsize='x-large')
+    # plt.savefig(f"./figure/{filename}.png",dpi=300,bbox_inches='tight',pad_inches=0.0)
+    plt.show()
+    # plt.close()
