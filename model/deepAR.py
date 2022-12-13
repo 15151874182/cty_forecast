@@ -49,6 +49,12 @@ class DeeparPyorch(nn.Module):
         self.std=nn.Sequential(nn.Linear(self.hidden_size * self.num_layers, 1),
                                nn.Softplus()# softplus to make sure standard deviation is positive
                                )
+    def init_hidden(self, batch_size):
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device)
+
+    def init_cell(self, batch_size):
+        return torch.zeros(self.num_layers, batch_size, self.hidden_size).to(device)
+    
     def forward(self, x, hidden, cell):
         output, (hidden, cell) = self.lstm(x, (hidden, cell))  
         h=hidden.contiguous() ##h要参与中间计算，但是不能影响hidden,contiguous相当于深拷贝
@@ -74,7 +80,7 @@ class DeepAR():
         '''
         distribution = torch.distributions.normal.Normal(mu, std)
         likelihood = distribution.log_prob(gt)
-        return -torch.mean(likelihood).to(device)
+        return -torch.mean(likelihood)
     
     def build_model(self,x_train):
         self.model=DeeparPyorch(fea_size=x_train.shape[1],
@@ -92,8 +98,11 @@ class DeepAR():
         
         self.scaler_x = MinMaxScaler(feature_range=(0, 1))
         self.scaler_y = MinMaxScaler(feature_range=(0, 1))
+        setattr(self.scaler_y, 'mu_inverse_scale', (y_train.max()-y_train.min())*y_train.sum()/(y_train.sum()-len(y_train)*y_train.min()))
+        setattr(self.scaler_y, 'std_inverse_scale',y_train.max()-y_train.min())
+                
         x_train = self.scaler_x.fit_transform(x_train)
-        y_train = self.scaler_y.fit_transform(y_train[:,None])
+        y_train = self.scaler_y.fit_transform(y_train[:,None])  
         x_val = self.scaler_x.transform(x_val)
         y_val = self.scaler_y.transform(y_val[:,None])
 
@@ -120,26 +129,26 @@ class DeepAR():
         #                             momentum=0.9, weight_decay=args.weight_decay)
         # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
         
-        for epoch in tqdm(range(1)):
+        for epoch in tqdm(range(10)):
             # 训练步骤开始
             self.model.train()
-            loss=0
-            hidden=cell=None
             for x,y in train_loader:
+                loss = 0
+                hidden = self.model.init_hidden(self.model.batch_size)##lstm的hidden和cell初始化
+                cell = self.model.init_cell(self.model.batch_size)
                 x=x.to(device)
-                y=y.to(device)
-                if hidden==None: ##lstm的hidden和cell初始化
-                    hidden = torch.randn(self.model.num_directions * self.model.num_layers, x.shape[0], self.model.hidden_size).to(device)
-                    cell = torch.randn(self.model.num_directions * self.model.num_layers, x.shape[0], self.model.hidden_size).to(device)                
+                y=y.to(device)          
                 for t in range(x.shape[1]):
-                    mu, std, hidden, cell = self.model(x[:,t,:].unsqueeze(1), hidden, cell)
+                    mu, std, hidden, cell = self.model(x[:,t,:].unsqueeze(1), hidden, cell)                        
                     loss += self.log_prob_loss_fn(mu, std, y[:,t,:])
                 
-                print('loss:',loss)
                 # 优化器优化模型
                 optimizer.zero_grad()
                 loss.backward()
+                hidden = hidden.detach()
+                cell = cell.detach()
                 optimizer.step()
+            print('loss:',loss)
             # res=abs(pred-y)/y
             # print('train mape:',float(1-res.mean()))
             # scheduler.step()
@@ -168,22 +177,38 @@ class DeepAR():
                                        drop_last=False)   
         
         for x,y in test_loader:
+            hidden = self.model.init_hidden(testset.tensors[0].shape[0])##lstm的hidden和cell初始化
+            cell = self.model.init_cell(testset.tensors[0].shape[0])
             x=x.to(device)
-            y=y.to(device)
-            pred = self.model(x)
-            pred=pred.detach().numpy().reshape(-1,1)
-            pred=self.scaler_y.inverse_transform(pred)
-            y=y.numpy().reshape(-1,1)
-            res=abs(pred-y)/y
+            y=y.to(device)     
+            mus=[]
+            stds=[]
+            for t in range(x.shape[1]):
+                mu, std, hidden, cell = self.model(x[:,t,:].unsqueeze(1), hidden, cell)   
+                mus.append(mu)    
+                stds.append(std)    
+            mus=torch.concat(mus,axis=0)
+            mus=mus*self.scaler_y.mu_inverse_scale
+            mus=mus.cpu().detach().numpy().reshape(-1,1)
+            stds=torch.concat(stds,axis=0)
+            stds=stds*self.scaler_y.std_inverse_scale
+            stds=stds.cpu().detach().numpy().reshape(-1,1)
+            
+            y=y.cpu().numpy().reshape(-1,1)
+            res=abs(mus-y)/y
             print('test mape:',float(1-res.mean()))   
-            
-            
+        
+        pred=mus
+        pred_upper=mus+2*stds
+        pred_lower=mus-2*stds
+        pred_upper=pd.DataFrame(pred_upper)
+        pred_lower=pd.DataFrame(pred_lower)
         pred=pd.DataFrame(pred)
         y=pd.DataFrame(y.reshape(-1))
-        res=pd.concat([pred,y],axis=1)
-        res.columns=['pred','gt']
-        from my_utils.plot import plot_without_date
-        plot_without_date(res,'res',cols = ['pred','gt']) 
+        res=pd.concat([pred_upper,pred_lower,pred,y],axis=1)
+        res.columns=['pred_upper','pred_lower','pred','gt']
+        from my_utils.plot import plot_fill_between
+        plot_fill_between(res[:600],'res',cols = ['pred_upper','pred_lower','pred','gt']) 
         self.res=res
         
 if __name__=='__main__':
@@ -196,6 +221,10 @@ if __name__=='__main__':
     # df=dataset.load_system_tang(mode='ts',y_shift=96).data
     df=dataset.load_system1(mode='ts',y_shift=96).data
     df=df[['date','load','target']]
+    df['day-1']=df['load'].shift(96*1)
+    df['day-2']=df['load'].shift(96*2)
+    df['day-3']=df['load'].shift(96*3)
+    df=df.dropna()
     ####Step3:有效的特征工程feature
     # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
     # df=date_to_timeFeatures(df)

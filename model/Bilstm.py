@@ -93,7 +93,7 @@ class LSTM():
                                      shuffle=False, ##x_val已经打乱过了
                                      num_workers=1,
                                      drop_last=True)        
-        loss_fn = nn.MSELoss().to(device)
+        loss_fn = nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3,
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,

@@ -106,7 +106,7 @@ class LSTM():
                                      shuffle=False, ##x_val已经打乱过了
                                      num_workers=1,
                                      drop_last=True)        
-        loss_fn = PinballLoss().to(device)
+        loss_fn = PinballLoss()
         optimizer_upper = torch.optim.Adam(self.model_upper.parameters(), lr=1e-3,
                                      weight_decay=0)
         optimizer_lower = torch.optim.Adam(self.model_lower.parameters(), lr=1e-3,

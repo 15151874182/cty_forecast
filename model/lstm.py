@@ -70,7 +70,7 @@ class LSTM():
         self.scaler_x = MinMaxScaler(feature_range=(0, 1))
         self.scaler_y = MinMaxScaler(feature_range=(0, 1))
         x_train = self.scaler_x.fit_transform(x_train)
-        y_train = self.scaler_y.fit_transform(y_train[:,None])
+        y_train = self.scaler_y.fit_transform(y_train[:,None])      
         x_val = self.scaler_x.transform(x_val)
         y_val = self.scaler_y.transform(y_val[:,None])
 
@@ -91,7 +91,7 @@ class LSTM():
                                      shuffle=False, ##x_val已经打乱过了
                                      num_workers=1,
                                      drop_last=True)        
-        loss_fn = nn.MSELoss().to(device)
+        loss_fn = nn.MSELoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3,
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
@@ -101,7 +101,6 @@ class LSTM():
         for epoch in tqdm(range(300)):
             # 训练步骤开始
             self.model.train()
-            train_loss=[]
             for x,y in train_loader:
                 x=x.to(device)
                 y=y.to(device)
