@@ -24,103 +24,113 @@ torch.manual_seed(0)
 np.random.seed(0)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class LstmPyorch(nn.Module):
-    def __init__(self, fea_size, seq_len, hidden_size, num_layers, output_size, batch_size):
+class Encoder(nn.Module):
+    def __init__(self, fea_dim, hid_dim, n_layers):
         super().__init__()
-        # self.trial=trial
-        # hidden_size=self.trial.suggest_int('hidden_size', 1,20,step=1),
-        # num_layer=self.trial.suggest_int('num_layer', 1,10,step=1),        
-        self.fea_size = fea_size
-        self.seq_len=seq_len
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.output_size = output_size
-        self.num_directions = 1 # 单向LSTM
-        self.batch_size = batch_size
-        self.lstm = nn.LSTM(self.fea_size, self.hidden_size, self.num_layers, batch_first=True)
-        self.linear = nn.Linear(self.hidden_size, self.output_size)
+        self.fea_dim = fea_dim
+        self.hid_dim = hid_dim
+        self.n_layers = n_layers    
+        self.lstm = nn.LSTM(self.fea_dim, self.hid_dim, self.n_layers, batch_first=True)
 
     def forward(self, x):
-        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
-        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
-        output, (hidden, cell) = self.lstm(x,(h_0,c_0)) # [16, 96, 3]
-        pred = self.linear(output)  # [16, 96, 1]
-        return pred    
+        outputs, (hidden, cell) = self.lstm(x)
+        return hidden, cell
 
-class LSTM():
-    
-    def __init__(self):
-        pass
+
+class Decoder(nn.Module):
+    def __init__(self, fea_dim, hid_dim, n_layers):
+        super().__init__()
+        self.fea_dim = fea_dim
+        self.hid_dim = hid_dim
+        self.n_layers = n_layers    
+        self.lstm = nn.LSTM(self.fea_dim, self.hid_dim, self.n_layers, batch_first=True)
+        self.fc = nn.Linear(hid_dim, 1)
+        
+    def forward(self, x, hidden, cell):
+        output, (hidden, cell) = self.lstm(x, (hidden, cell))
+        pred = self.fc(output)
+        return pred, hidden, cell
+
+class Seq2Seq():
+    def __init__(self,seq_len):
+        self.seq_len=seq_len
         
     def build_model(self,x_train):
-        self.model=LstmPyorch(fea_size=x_train.shape[1],
-                         seq_len=96,
-                         hidden_size=5,
-                         num_layers=1,
-                         output_size=1, 
-                         batch_size=32).to(device)
-        return self.model      
-
+        self.enc = Encoder(fea_dim=x_train.shape[1], hid_dim=5, n_layers=1).to(device)
+        self.dec = Decoder(fea_dim=x_train.shape[1], hid_dim=5, n_layers=1).to(device)
 
     def train(self, x_train, y_train, x_val, y_val):###df包含label
-        self.model = self.build_model(x_train)
+        self.build_model(x_train)
+        self.enc.train()
+        self.dec.train()        
         # 先转换成torch能识别的dataset
         import torch.utils.data as data
         
-        self.scaler_x = MinMaxScaler(feature_range=(0, 1))
-        self.scaler_y = MinMaxScaler(feature_range=(0, 1))
+        self.scaler_x = MinMaxScaler(feature_range=(0.1, 1))
+        self.scaler_y = MinMaxScaler(feature_range=(0.1, 1))
         x_train = self.scaler_x.fit_transform(x_train)
         y_train = self.scaler_y.fit_transform(y_train[:,None])      
         x_val = self.scaler_x.transform(x_val)
         y_val = self.scaler_y.transform(y_val[:,None])
 
-        x=torch.Tensor(x_train.reshape(-1,self.model.seq_len,x_train.shape[1]))
-        y=torch.Tensor(y_train.reshape(-1,self.model.seq_len,1))
+        x=torch.Tensor(x_train.reshape(-1,self.seq_len,x_train.shape[1]))
+        y=torch.Tensor(y_train.reshape(-1,self.seq_len,1))
         trainset = data.TensorDataset(x, y)
         train_loader = data.DataLoader(dataset=trainset,
-                                       batch_size=self.model.batch_size,
+                                       batch_size=x.shape[0],
                                        shuffle=False, ##x_train已经打乱过了
                                        num_workers=1,
                                        drop_last=True)
         
-        x=torch.Tensor(x_val.reshape(-1,self.model.seq_len,x_val.shape[1]))
-        y=torch.Tensor(y_val.reshape(-1,self.model.seq_len,1))        
+        x=torch.Tensor(x_val.reshape(-1,self.seq_len,x_val.shape[1]))
+        y=torch.Tensor(y_val.reshape(-1,self.seq_len,1))        
         valset = data.TensorDataset(x, y)
         val_loader = data.DataLoader(dataset=valset,
-                                     batch_size=self.model.batch_size,
+                                     batch_size=x.shape[0],
                                      shuffle=False, ##x_val已经打乱过了
                                      num_workers=1,
                                      drop_last=True)        
         loss_fn = nn.MSELoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-3,
+        import itertools 
+        optimizer = torch.optim.Adam(itertools.chain(self.enc.parameters(), self.dec.parameters()), lr=1e-3,
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
         #                             momentum=0.9, weight_decay=args.weight_decay)
         # scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
         
-        for epoch in tqdm(range(300)):
+        for epoch in tqdm(range(2000)):
             # 训练步骤开始
-            self.model.train()
+
+            
             for x,y in train_loader:
+                preds = []
                 x=x.to(device)
                 y=y.to(device)
-                pred = self.model(x)
-                loss = loss_fn(pred, y)           
+                
+                enc_in=x
+                hidden, cell = self.enc(enc_in)
+                for t in range(x.shape[1]):
+                    dec_in=x[:,t,:].unsqueeze(1)
+                    pred, hidden, cell = self.dec(dec_in, hidden, cell)
+                    preds.append(pred)
+                preds=torch.cat(preds,axis=1)
+                loss = loss_fn(preds, y)      
+                # print(loss)
                 # 优化器优化模型
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-            # res=abs(pred-y)/y
+            # res=abs(preds-y)/y
             # print('train mape:',float(1-res.mean()))
             
-            # pred=pred.detach().cpu().numpy().reshape(-1,1)
-            # y=y.cpu().numpy().reshape(-1,1)
-            # pred=pd.DataFrame(pred)
+            # preds=preds.detach().cpu().numpy().reshape(-1,1)
+            # y=y.cpu().numpy().reshape(-1,1)            
+            # preds=pd.DataFrame(preds)
             # y=pd.DataFrame(y.reshape(-1))
-            # res=pd.concat([pred,y],axis=1)
-            # res.columns=['pred','gt']
+            # res=pd.concat([preds,y],axis=1)
+            # res.columns=['preds','gt']
             # from my_utils.plot import plot_without_date
-            # plot_without_date(res[:600],'res',cols = ['pred','gt'])             
+            # plot_without_date(res[:600],'res',cols = ['preds','gt'])         
 
             # scheduler.step()
             
@@ -134,33 +144,41 @@ class LSTM():
             #         val_mape.append(float(1-res.mean()))
             #     print('val mean loss:',np.mean(val_mape))
 
-    def test(self,x_test, y_test, model):   
-        self.model.eval()
+    def test(self,x_test, y_test):  
+        self.enc.eval()
+        self.dec.eval()
         x_test = self.scaler_x.transform(x_test)
         import torch.utils.data as data
-        x=torch.Tensor(x_test.reshape(-1,self.model.seq_len,x_test.shape[1]))
-        y=torch.Tensor(y_test.values.reshape(-1,self.model.seq_len,1))  
+        x=torch.Tensor(x_test.reshape(-1,self.seq_len,x_test.shape[1]))
+        y=torch.Tensor(y_test.values.reshape(-1,self.seq_len,1))  
         testset = data.TensorDataset(x, y)
         test_loader = data.DataLoader(dataset=testset,
-                                       batch_size=testset.tensors[0].shape[0], ##相当于整个batch
+                                       batch_size=x.shape[0], ##相当于整个batch
                                        shuffle=False, ##x_train已经打乱过了
                                        num_workers=1,
                                        drop_last=False)    
         for x,y in test_loader:
+            preds = []
             x=x.to(device)
             y=y.to(device)
-            pred = self.model(x)
-            pred=pred.detach().cpu().numpy().reshape(-1,1)
-            pred=self.scaler_y.inverse_transform(pred)
+            enc_in=x
+            hidden, cell = self.enc(enc_in)
+            for t in range(x.shape[1]):
+                dec_in=x[:,t,:].unsqueeze(1)
+                pred, hidden, cell = self.dec(dec_in, hidden, cell)
+                preds.append(pred)
+            preds=torch.cat(preds,axis=1)
+            preds=preds.detach().cpu().numpy().reshape(-1,1)
+            preds=self.scaler_y.inverse_transform(preds)
             y=y.cpu().numpy().reshape(-1,1)
-            res=abs(pred-y)/y
+            res=abs(preds-y)/y
             print('test mape:',float(1-res.mean()))   
-        pred=pd.DataFrame(pred)
+        preds=pd.DataFrame(preds)
         y=pd.DataFrame(y.reshape(-1))
-        res=pd.concat([pred,y],axis=1)
-        res.columns=['pred','gt']
+        res=pd.concat([preds,y],axis=1)
+        res.columns=['preds','gt']
         from my_utils.plot import plot_without_date
-        plot_without_date(res[:600],'res',cols = ['pred','gt']) 
+        plot_without_date(res[:600],'res',cols = ['preds','gt']) 
         self.res=res
         
 if __name__=='__main__':
@@ -201,6 +219,6 @@ if __name__=='__main__':
     y_test=testset.pop('target')
     x_test=testset  
     
-    lstm=LSTM()
-    lstm.train(x_train, y_train, x_val, y_val)
-    lstm.test(x_test,y_test,lstm.model)
+    seq2seq=Seq2Seq(seq_len=96)
+    seq2seq.train(x_train, y_train, x_val, y_val)
+    seq2seq.test(x_test,y_test)

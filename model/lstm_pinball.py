@@ -54,8 +54,8 @@ class LstmPyorch(nn.Module):
         self.linear = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, x):
-        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size)*x[0].std()+x[0].mean().to(device)
-        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size)*x[0].std()+x[0].mean().to(device)
+        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
+        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
         output, (hidden, cell) = self.lstm(x,(h_0,c_0)) # [16, 96, 3]
         pred = self.linear(output)  # [16, 96, 1]
         return pred    

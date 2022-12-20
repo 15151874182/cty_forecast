@@ -42,8 +42,8 @@ class LstmPyorch(nn.Module):
 
     def forward(self, x):
         batch_size, fea_size = x.shape[0], x.shape[1]
-        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
-        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)
+        h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
+        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
         # output(batch_size, fea_size, num_directions * hidden_size)
         output, (hidden, cell) = self.lstm(x,(h_0,c_0)) # [16, 96, 3]
         pred = self.linear(output)  # [16, 96, 1]
@@ -98,9 +98,9 @@ class LSTM():
                                      weight_decay=0)
         # optimizer = torch.optim.SGD(self.model.parameters(), lr=args.lr,
         #                             momentum=0.9, weight_decay=args.weight_decay)
-        scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
+        # scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
         
-        for epoch in tqdm(range(100)):
+        for epoch in tqdm(range(300)):
             # 训练步骤开始
             self.model.train()
             train_loss=[]
@@ -113,19 +113,19 @@ class LSTM():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-            res=abs(pred-y)/y
-            print('train mape:',float(1-res.mean()))
+            # res=abs(pred-y)/y
+            # print('train mape:',float(1-res.mean()))
             
-            pred=pred.detach().cpu().numpy().reshape(-1,1)
-            y=y.cpu().numpy().reshape(-1,1)
-            pred=pd.DataFrame(pred)
-            y=pd.DataFrame(y.reshape(-1))
-            res=pd.concat([pred,y],axis=1)
-            res.columns=['pred','gt']
-            from my_utils.plot import plot_without_date
-            plot_without_date(res[:300],'res',cols = ['pred','gt'])             
+            # pred=pred.detach().cpu().numpy().reshape(-1,1)
+            # y=y.cpu().numpy().reshape(-1,1)
+            # pred=pd.DataFrame(pred)
+            # y=pd.DataFrame(y.reshape(-1))
+            # res=pd.concat([pred,y],axis=1)
+            # res.columns=['pred','gt']
+            # from my_utils.plot import plot_without_date
+            # plot_without_date(res[:600],'res',cols = ['pred','gt'])             
 
-            scheduler.step()
+            # scheduler.step()
             
             # if epoch%10==0:
             #     # 验证步骤开始
@@ -145,7 +145,7 @@ class LSTM():
         y=torch.Tensor(y_test.values.reshape(-1,self.model.seq_len,1))  
         testset = data.TensorDataset(x, y)
         test_loader = data.DataLoader(dataset=testset,
-                                       batch_size=testset.tensors[0].shape[0], ##相当于整个batch
+                                       batch_size=x.shape[0], ##相当于整个batch
                                        shuffle=False, ##x_train已经打乱过了
                                        num_workers=1,
                                        drop_last=False)    
@@ -163,7 +163,7 @@ class LSTM():
         res=pd.concat([pred,y],axis=1)
         res.columns=['pred','gt']
         from my_utils.plot import plot_without_date
-        plot_without_date(res[:300],'res',cols = ['pred','gt']) 
+        plot_without_date(res[:600],'res',cols = ['pred','gt']) 
         self.res=res
         
 if __name__=='__main__':

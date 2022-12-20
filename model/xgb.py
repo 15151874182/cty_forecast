@@ -59,21 +59,31 @@ class XGB():
       
     def train(self, x_train, y_train, x_val, y_val):###df包含label
         print('xgb training...')
-        model = self.build_model()
-        model.fit(x_train,
+        self.model = self.build_model()
+        self.model.fit(x_train,
                   y_train,
                   eval_set=[(x_val, y_val)],
                     early_stopping_rounds=20,
                   eval_metric='rmse',
                   verbose=10)
-        return model  
+        return self.model  
 
-    def test(self,x_test, y_test, model):###df包含label
+    def test(self,x_test, y_test):###df包含label
         print('xgb testing...')
-        pred=model.predict(x_test)
+        pred=self.model.predict(x_test)
+        pred=pred.reshape(-1,1)
+        gt=np.array(y_test).reshape(-1,1)
+        
+        res=abs(pred-gt)/gt
+        print('test mape:',float(1-res.mean()))   
+
         pred=pd.DataFrame(pred)
-        gt=pd.DataFrame(y_test)
-        return pred,gt  
+        gt=pd.DataFrame(gt)        
+        res=pd.concat([pred,gt],axis=1)
+        res.columns=['pred','gt']
+        from my_utils.plot import plot_without_date
+        plot_without_date(res[:600],'res',cols = ['pred','gt']) 
+        self.res=res
 
     def save_model(self,model,save_path):
         joblib.dump(model,save_path)
@@ -89,50 +99,45 @@ if __name__=='__main__':
     project_path=os.path.dirname(os.path.dirname(__file__))
     sys.path.append(project_path)
     ####Step1:read raw data
-    np.random.seed(10)
-    f='../data/wind/ghgr.csv'
-    df=pd.read_csv(f) ##df原始数据
-    
-    ####Step2:data process
-    #method1:直接插值补全，以此对比和dataclean的效果
-    del df['temp_50_XXL'],df['press_50_XXL']
-    df=df.loc[:,~df.columns.str.contains('Unnamed')]
-    df.interpolate(method="linear",axis=0,inplace=True)
-    df['date']=pd.to_datetime(df['date'])
-    #method2:dataclean
-    
-    
+    from dataset import Dataset
+    dataset=Dataset()
+    # df=dataset.load_system_tang(mode='ts',y_shift=96).data
+    # df=dataset.load_wind1(mode='ts',y_shift=96).data
+    df=dataset.load_system1(mode='ts',y_shift=96).data
+    df=df[['date','load','target']]
+    df['day-1']=df['load'].shift(96*1)
+    df['day-2']=df['load'].shift(96*2)
+    df['day-3']=df['load'].shift(96*3)
+    df=df.dropna()
+    # df=df.loc[96:,:]
+    # df=df[['date','ws30','target']]
     ####Step3:有效的特征工程feature
-    from my_utils.feature import date_to_timeFeatures, wd_to_sincos_wd
-    df=date_to_timeFeatures(df)
-    df=wd_to_sincos_wd(df,['dir_50_XXL'],delete=True)
+    # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
+    # df=date_to_timeFeatures(df)
+    # df=wd_to_sincos_wd(df,['dir_50_XXL'],delete=True)
     
     ####Step4: 划分数据集
     ##要按天打乱，确保train,val,test同分布
-    del df['date'] 
     from my_utils.tools import dataset_split
-    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1])
+    del df['date']
+    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
     testset=testset.reset_index(drop=True)
     
-    # from utils.dataprocess import IMF
-    # trainset=IMF(trainset,col='load',length = 96)
-    # valset=IMF(valset,col='load',length = 96)
-    # testset=IMF(testset,col='load',length = 96)
-    y_train=trainset.pop('load')
+    y_train=trainset.pop('target')
     x_train=trainset
-    y_val=valset.pop('load')
+    y_val=valset.pop('target')
     x_val=valset
-    y_test=testset.pop('load')
+    y_test=testset.pop('target')
     x_test=testset  
     
     ###Step5: 自动调参
     def objective(trial):
         xgb=XGB(trial=trial,param=xgb_param)
-        trainded_model=xgb.train(x_train, y_train, x_val, y_val)
-        pred,gt=xgb.test(x_val,y_val,trainded_model)
-        loss=mean_squared_error(pred.values, gt.values)
+        xgb.train(x_train, y_train, x_val, y_val)
+        xgb.test(x_val,y_val)
+        loss=mean_squared_error(xgb.res['pred'].values, xgb.res['gt'].values)
         return loss
     
     # study=optuna.create_study(direction='maximize')
@@ -145,16 +150,19 @@ if __name__=='__main__':
     new_xgb_param.update(study.best_params) ##更新超参
     xgb=XGB(trial=False,param=new_xgb_param)    
 
-    xgb=XGB(trial=False,param=new_xgb_param)
-    trainded_model=xgb.train(x_train, y_train, x_val, y_val)
-    pred_old,gt=xgb.test(x_test,y_test,trainded_model)
-    old_loss=mean_squared_error(pred_old.values, gt.values)
-    print('old_loss:',old_loss)
-    res=pd.concat([pred_old.reset_index(drop=True),gt.reset_index(drop=True)],axis=1)
-    res.columns=['pred_old','gt']
-    from my_utils.plot import plot_without_date
-    plot_without_date(res,'res',cols = ['pred_old','gt'])        
-        
+    # xgb=xgb(trial=False,param=xgb_param)
+    xgb.train(x_train, y_train, x_val, y_val)
+    xgb.test(x_test,y_test)
+    
+    # from PyEMD import EMD 
+    # emd = EMD()
+    # ts=np.array(pred_old).reshape(-1)
+    # emd.emd(ts)
+    # imfs, res = emd.get_imfs_and_residue() 
+    # pred_old=res
+    # for i in range(0,imfs.shape[0]):
+    #     pred_old+=imfs[i] ##将imfs[0]高频噪音去掉，得到平滑的曲线
+
         
         
         
