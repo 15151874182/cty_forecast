@@ -2,7 +2,7 @@
 
 ![image-20221220101037542](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220101037542.png)
 
-LSTM：
+1.LSTM：
 
 ![image-20221220101853723](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220101853723.png)
 
@@ -12,7 +12,7 @@ LSTM：
 
 ![image-20221220102614635](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220102614635.png)
 
-BiLSTM:
+2.BiLSTM:
 
 ![image-20221220102006652](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220102006652.png)
 
@@ -22,7 +22,7 @@ BiLSTM:
 
 效果比LSTM还差一点
 
-Seq2seq:
+3.Seq2seq:
 
 ![image-20221220103130286](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220103130286.png)
 
@@ -34,7 +34,7 @@ Seq2seq:
 
 相对LSTM有个0.2%的提升
 
-Lightgbm:
+4.Lightgbm:
 
 optuna自动化调参
 
@@ -43,3 +43,13 @@ optuna自动化调参
 ![image-20221220123225783](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221220123225783.png)
 
 和lstm差不多，但是速度快几个量级，对系统环境要求也低，适合实战部署
+
+5.Attention:
+
+![image-20221228161512642](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221228161512642.png)
+
+![image-20221228161614353](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221228161614353.png)
+
+![image-20221228161636852](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221228161636852.png)
+
+效果很差训练还巨慢，网上查了一些资料，attention并不适合做时序预测问题
