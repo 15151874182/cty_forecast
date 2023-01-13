@@ -20,24 +20,11 @@ from torch.autograd import Variable
 import warnings
 warnings.filterwarnings("ignore")
 
-####code may be used
-# load=pd.read_csv(f1)
-# load['date']=pd.to_datetime(load['date'])
-# df=pd.merge(wea,load,on='date')
-# df.reset_index(drop=True)
-# df.to_csv('system_load.csv')
-# df.rename(columns={'rttower_load':'load'}, inplace=True)
-# df=df[['date','load','speed_50_XXL','dir_50_XXL']]
-# df['date']=pd.to_datetime(df['date'])
-# testset=df.loc[(df['date'] >= pd.to_datetime('2022-5-31')) & (df['date'] < pd.to_datetime('2022-8-23'))]
-# df=df.loc[:,~df.columns.str.contains('Unnamed')]
-# group=df.groupby(df['date'].apply(lambda x:x.split()[0]))
-
 torch.manual_seed(0)
 np.random.seed(0)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-class LstmPyorch(nn.Module):
+class GruPyorch(nn.Module):
     def __init__(self, fea_size, seq_len, hidden_size, num_layers, output_size, batch_size):
         super().__init__()
         # self.trial=trial
@@ -50,13 +37,13 @@ class LstmPyorch(nn.Module):
         self.output_size = output_size
         self.num_directions = 1 # 单向LSTM
         self.batch_size = batch_size
-        self.lstm = nn.LSTM(self.fea_size, self.hidden_size, self.num_layers, batch_first=True)
+        self.gru = nn.GRU(self.fea_size, self.hidden_size, self.num_layers, batch_first=True)
         self.linear = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, x):
         h_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
-        c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
-        output, (hidden, cell) = self.lstm(x,(h_0,c_0)) # [16, 96, 3]
+        # c_0 = torch.rand(self.num_directions * self.num_layers, x.shape[0], self.hidden_size).to(device)*x[0].std()+x[0].mean()
+        output,hidden = self.gru(x,h_0) # [16, 96, 3]
         pred = self.linear(output)  # [16, 96, 1]
         return pred    
 
@@ -66,7 +53,7 @@ class LSTM():
         pass
         
     def build_model(self,x_train):
-        self.model=LstmPyorch(fea_size=x_train.shape[1],
+        self.model=GruPyorch(fea_size=x_train.shape[1],
                          seq_len=96,
                          hidden_size=5,
                          num_layers=1,

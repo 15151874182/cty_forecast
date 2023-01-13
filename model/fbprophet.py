@@ -37,7 +37,7 @@ if __name__=='__main__':
     
     from dataset import Dataset
     dataset=Dataset()
-    df=dataset.load_system1().data
+    df=dataset.load_system2().data
     
     
     # df=df.iloc[:64704,:]

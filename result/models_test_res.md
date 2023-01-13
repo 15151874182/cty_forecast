@@ -53,3 +53,12 @@ optuna自动化调参
 ![image-20221228161636852](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221228161636852.png)
 
 效果很差训练还巨慢，网上查了一些资料，attention并不适合做时序预测问题
+
+6.GRU 简化版的lstm，但是效果一点也不差
+
+![image-20221229111428963](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221229111428963.png)
+
+![image-20221229111359038](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221229111359038.png)
+
+![image-20221229111510295](C:\Users\cty\AppData\Roaming\Typora\typora-user-images\image-20221229111510295.png)
+

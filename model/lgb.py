@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore")
 # df['date']=pd.to_datetime(df['date'])
 # testset=df.loc[(df['date'] >= pd.to_datetime('2022-5-31')) & (df['date'] < pd.to_datetime('2022-8-23'))]
 # df=df.loc[:,~df.columns.str.contains('Unnamed')]
-
+# group=df.groupby(df['date'].apply(lambda x:x.split()[0]))
 class LGB():
     
     def __init__(self,trial,param):

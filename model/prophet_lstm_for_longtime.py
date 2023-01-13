@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Aug 14 20:38:27 2021
+
+@author: cty
+"""
 import os,sys
 import datetime
 import math
@@ -17,6 +24,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR
 from torch.autograd import Variable
+from prophet import Prophet
+
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -32,7 +41,7 @@ warnings.filterwarnings("ignore")
 # testset=df.loc[(df['date'] >= pd.to_datetime('2022-5-31')) & (df['date'] < pd.to_datetime('2022-8-23'))]
 # df=df.loc[:,~df.columns.str.contains('Unnamed')]
 # group=df.groupby(df['date'].apply(lambda x:x.split()[0]))
-
+    
 torch.manual_seed(0)
 np.random.seed(0)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -175,34 +184,92 @@ class LSTM():
         from my_utils.plot import plot_without_date
         plot_without_date(res[:600],'res',cols = ['pred','gt']) 
         self.res=res
-        
+
+
+
 if __name__=='__main__':
+    ######################################prophet part
     ##项目目录加入环境变量
     project_path=os.path.dirname(os.path.dirname(__file__))
     sys.path.append(project_path)
     ####Step1:read raw data
+    np.random.seed(10)
+    
     from dataset import Dataset
     dataset=Dataset()
-    # df=dataset.load_system_tang(mode='ts',y_shift=96).data
-    # df=dataset.load_wind1(mode='ts',y_shift=96).data
-    df=dataset.load_system1(mode='ts',y_shift=96).data
-    df=df[['date','load','target']]
-    df['day-1']=df['load'].shift(96*1)
-    df['day-2']=df['load'].shift(96*2)
-    df['day-3']=df['load'].shift(96*3)
-    df=df.dropna()
-    # df=df.loc[96:,:]
-    # df=df[['date','ws30','target']]
-    ####Step3:有效的特征工程feature
-    # from utils.feature import date_to_timeFeatures, wd_to_sincos_wd
-    # df=date_to_timeFeatures(df)
-    # df=wd_to_sincos_wd(df,['dir_50_XXL'],delete=True)
+    df=dataset.load_system2().data
+    df2=df.copy()
+    from my_utils.dataprocess import points_to_days
+    df=points_to_days(df,cols=['tmp','target'])
     
-    ####Step4: 划分数据集
+    # df=df.iloc[:64704,:]
+    # df.columns=['y','ds']
+    # trainset=df.iloc[:35040,:]
+    # testset=df.iloc[35040:,:]     
+    ####Step2:data process
+    #method1:直接插值补全，以此对比和dataclean的效果
+    # df=df.loc[:,~df.columns.str.contains('Unnamed')]
+    # df.interpolate(method="linear",axis=0,inplace=True)
+    df.rename(columns={'date':'ds','mean_target':'y'}, inplace=True)###prophet的命名要求
+    df['ds']=pd.to_datetime(df['ds'])
+    # df['ds']=df['ds']-pd.Timedelta(1,unit='d') ##nextdaydate日期要减一天
+    # df['cap'] = 80000
+    trainset_prophet=df.iloc[:-14,:] 
+    testset_prophet=df.iloc[-14:,:] ##预测最后14天
+    
+    # model = Prophet(growth='logistic')
+    model = Prophet()
+    model.add_country_holidays(country_name='CN') ##增加节假日
+    model.fit(trainset_prophet)
+    future = model.make_future_dataframe(periods=14,freq='d',include_history=False)
+    # future['cap']=80000
+    # forecast = model.predict(future)
+    prophet_pred = model.predict(future)
+    # prophet_pred.to_csv('../result/prophet_pred.csv',index=False)
+    # prophet_pred=pd.read_csv('../result/prophet_pred.csv')
+    # prophet_pred=prophet_pred[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+    fig1 = model.plot(prophet_pred)
+    fig2 = model.plot_components(prophet_pred)        
+    
+    pred=prophet_pred['yhat']
+    gt=testset_prophet['y']
+    loss=1-mean_absolute_percentage_error(gt.values, pred.values)
+    print('loss:',loss)
+    res=pd.concat([pred.reset_index(drop=True),gt.reset_index(drop=True)],axis=1)
+    res.columns=['pred','gt']
+    from my_utils.plot import plot_without_date
+    plot_without_date(res,'res',cols = ['pred','gt'])         
+
+#######################LSTM part
+    df2['day-1']=df2['target'].shift(96*1)
+    df2['day-2']=df2['target'].shift(96*2)
+    df2['day-3']=df2['target'].shift(96*3)
+    df2=df2.dropna()
+    df2['ds']=df2['date'].apply(lambda x:x.split()[0])
+    df2['ds']=pd.to_datetime(df2['ds'])
+    trainset_prophet['ds']=pd.to_datetime(trainset_prophet['ds'])
+    
+    
+    prophet_pred=prophet_pred[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
+    prophet_pred.columns=['ds','mean_target','min_target','max_target']
+    testset_prophet['ds']=pd.to_datetime(testset_prophet['ds'])
+    prophet_pred['ds']=pd.to_datetime(prophet_pred['ds'])
+    xx=testset_prophet[['ds','max_tmp','min_tmp','mean_tmp']]
+    xxx=pd.merge(prophet_pred,xx,on='ds',how='left')
+    prophet_pred.columns=['ds','mean_target','min_target','max_target']
+    xxx.rename(columns={'mean_target':'y'}, inplace=True)
+    xxxx=pd.concat([trainset_prophet,xxx],axis=0)
+    df=pd.merge(df2,xxxx,on='ds',how='left')
+    df.rename(columns={'y':'mean_target'}, inplace=True)
+    del df['ds']
+    # df.to_csv('../result/prophet_lstm_train.csv',index=False)
+    # df=pd.read_csv('../result/prophet_lstm_train.csv')
+
     ##要按天打乱，确保train,val,test同分布
     from my_utils.tools import dataset_split
     del df['date']
-    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.2,0.1],mode=2)
+    test_ratio=14/(df.shape[0]/96)
+    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.3-test_ratio,test_ratio],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
     testset=testset.reset_index(drop=True)
