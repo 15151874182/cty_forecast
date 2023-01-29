@@ -120,7 +120,7 @@ class LSTM():
         #                             momentum=0.9, weight_decay=args.weight_decay)
         # scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
         
-        for epoch in tqdm(range(300)):
+        for epoch in tqdm(range(500)):
             # 训练步骤开始
             self.model.train()
             for x,y in train_loader:
@@ -214,8 +214,8 @@ if __name__=='__main__':
     df['ds']=pd.to_datetime(df['ds'])
     # df['ds']=df['ds']-pd.Timedelta(1,unit='d') ##nextdaydate日期要减一天
     # df['cap'] = 80000
-    trainset_prophet=df.iloc[:-14,:] 
-    testset_prophet=df.iloc[-14:,:] ##预测最后14天
+    trainset_prophet=df.iloc[:-14*2,:] 
+    testset_prophet=df.iloc[-14*2:-14,:] ##test baseline是12/4~12/17号
     
     # model = Prophet(growth='logistic')
     model = Prophet()
@@ -229,7 +229,7 @@ if __name__=='__main__':
     # prophet_pred=pd.read_csv('../result/prophet_pred.csv')
     # prophet_pred=prophet_pred[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
     fig1 = model.plot(prophet_pred)
-    fig2 = model.plot_components(prophet_pred)        
+    # fig2 = model.plot_components(prophet_pred)        
     
     pred=prophet_pred['yhat']
     gt=testset_prophet['y']
@@ -259,6 +259,7 @@ if __name__=='__main__':
     prophet_pred.columns=['ds','mean_target','min_target','max_target']
     xxx.rename(columns={'mean_target':'y'}, inplace=True)
     xxxx=pd.concat([trainset_prophet,xxx],axis=0)
+    df2=df2.iloc[:-96*14,:]
     df=pd.merge(df2,xxxx,on='ds',how='left')
     df.rename(columns={'y':'mean_target'}, inplace=True)
     del df['ds']
@@ -268,8 +269,8 @@ if __name__=='__main__':
     ##要按天打乱，确保train,val,test同分布
     from my_utils.tools import dataset_split
     del df['date']
-    test_ratio=14/(df.shape[0]/96)
-    trainset,valset,testset=dataset_split(df,n=96,ratio=[0.7,0.3-test_ratio,test_ratio],mode=2)
+    test_ratio=14/(df.shape[0]/96) ##这里由于按比例划分，小数计算不精确，导致用写13，testset才是14天
+    trainset,valset,testset=dataset_split(df,n=96*14,ratio=[1-2*test_ratio,test_ratio,test_ratio],mode=2)
     trainset=trainset.reset_index(drop=True)
     valset=valset.reset_index(drop=True)
     testset=testset.reset_index(drop=True)

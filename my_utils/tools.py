@@ -46,9 +46,9 @@ def dataset_split(df,n,ratio=[0.7,0.2,0.1],mode=1):
     ##划分逻辑：先按组划分，计算出train，val，test分别占哪几组
     ##然后根据天数计算出每段id在df种的具体ids，并提取对应数据
     bins=int(len(df)/n) ##先按组划分
-    train_len=int(bins*ratio[0]) ##train占几组
+    test_len=int(bins*ratio[2]) ##test占几组
     val_len=int(bins*ratio[1])   ##val占几组
-    test_len=bins-train_len-val_len
+    # train_len=bins-test_len-val_len ##train占几组
     
     index=[i for i in range(bins)]
     test_id=index[-test_len:] ##test先抽最后面
